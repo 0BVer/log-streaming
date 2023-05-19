@@ -1,0 +1,6 @@
+fake-factory
+Faker
+pytz
+tzlocal
+numpy
+kafka-python
