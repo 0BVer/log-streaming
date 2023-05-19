@@ -1,0 +1,4 @@
+/kafka/
+/zookeeper/
+/.idea/
+*.log
