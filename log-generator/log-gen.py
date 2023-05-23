@@ -96,7 +96,7 @@ if __name__ == '__main__':
     kafka_setup()
     start_time = time.time()
 
-    for _ in range(1):
+    for _ in range(100):
         for t in threads:
             t.start()
         time.sleep(1)
