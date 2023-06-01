@@ -4,7 +4,3 @@ pytz
 tzlocal
 numpy
 kafka-python
-pandas
-pyspark
-pyarrow
-grpcio
