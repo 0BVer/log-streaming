@@ -8,7 +8,7 @@ topics = ['user', 'post', 'mail']
 admin_client = KafkaAdminClient(bootstrap_servers=bootstrap_server)
 
 
-def setup():
+def kafka_topic_setup():
     try:
         for topic in topics:
             # 토픽 이름, 파티션 수, 레플리케이션 팩터 설정
@@ -25,4 +25,4 @@ def setup():
 
 
 if __name__ == '__main__':
-    setup()
+    kafka_topic_setup()
