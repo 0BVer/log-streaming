@@ -4,4 +4,4 @@ pandas
 pyspark
 pyarrow
 grpcio
-fastavro
+avro-python3

@@ -1,8 +1,11 @@
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import from_json, col, udf
+from pyspark.sql.avro.functions import to_avro
+from pyspark.sql.functions import from_json, col, struct
 from pyspark.sql.types import StructType, StructField, StringType
-from my_udf import parse_log_udf, serialize_avro_udf
-from kafka_config import kafka_input_options, kafka_output_options, kafka_output_avro_options
+
+from kafka_config import kafka_input_options, kafka_output_avro_options, kafka_output_options
+from my_udf import parse_log_udf
+from avro_schema import access_log_avro
 
 spark = SparkSession.builder \
     .appName("log-processing") \
@@ -20,7 +23,7 @@ df = spark.readStream \
     .options(**kafka_input_options) \
     .load()
 
-# 로그 파싱을 위해 스키마를 적용
+# # 로그 파싱을 위해 스키마를 적용
 parsed_df = df.select(from_json(df.value.cast("string"), log_schema).alias("parsed_log")) \
     .select("parsed_log.log")
 
@@ -33,12 +36,13 @@ parsed_fields_df = parsed_df.withColumn("log", parse_log_udf(col("log"))) \
     col("log.url").alias("url"),
     col("log.http_version").alias("http_version"),
     col("log.status").alias("status"),
-    col("log.byte").alias("byte")) \
-    .selectExpr("to_json(struct(*)) AS value")
+    col("log.byte").alias("byte"))
 
-# Avro 변환 및 Kafka에 퍼블리싱
-avro_df = parsed_fields_df.withColumn("value", serialize_avro_udf(col("value")))
-avro_df.select("value") \
+# Avro로 변환하는 작업
+avro_df = parsed_fields_df.select(to_avro(struct("*"), access_log_avro).alias("value"))
+
+# Kafka에 퍼블리싱
+avro_df.selectExpr("CAST(value AS BINARY)") \
     .writeStream \
     .format("kafka") \
     .options(**kafka_output_avro_options) \
@@ -46,7 +50,10 @@ avro_df.select("value") \
 
 # 공격 의심 url 필터링 및 Kafka에 퍼블리싱
 filtered_df = parsed_fields_df.where((col("url") != "/admin") & (col("url") != "/.env"))
-filtered_df.selectExpr("(CAST(value AS STRING)) AS value") \
+
+filtered_avro_df = filtered_df.select(to_avro(struct("*"), access_log_avro).alias("value"))
+
+filtered_avro_df.selectExpr("CAST(value AS BINARY)") \
     .writeStream \
     .format("kafka") \
     .options(**kafka_output_options) \

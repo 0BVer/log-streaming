@@ -73,7 +73,7 @@ if __name__ == '__main__':
     setup()
     start_time = time.time()
 
-    for _ in range(5):
+    for _ in range(1):
         threading.Thread(target=create_user_server_log).start()
         threading.Thread(target=create_post_server_log).start()
         threading.Thread(target=create_mail_server_log).start()
