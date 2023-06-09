@@ -192,8 +192,8 @@ services:
       - --kafka.server=kafka3:39092
 
   influxdb:
-    image: influxdb:1.8
-    hostname: influxdb
+    image: influxdb:2.7-alpine
+    container_name: influxdb
     ports:
       - "8086:8086"
     environment:

@@ -43,7 +43,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to create consumer group: %s", err)
 	}
-	defer consumer.Close()
+	defer func(consumer sarama.ConsumerGroup) {
+		err := consumer.Close()
+		if err != nil {
+			log.Fatalf("Failed to close consumer group: %s", err)
+		}
+	}(consumer)
 
 	// Set up Avro codec
 	codec, err := goavro.NewCodec(`{
