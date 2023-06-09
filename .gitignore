@@ -3,3 +3,4 @@
 /.idea/
 *.log
 /visualization/
+/kafka-influxdb-consumer/influxdb-data/

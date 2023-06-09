@@ -190,3 +190,15 @@ services:
       - --kafka.server=kafka1:19092
       - --kafka.server=kafka2:29092
       - --kafka.server=kafka3:39092
+
+  influxdb:
+    image: influxdb:1.8
+    hostname: influxdb
+    ports:
+      - "8086:8086"
+    environment:
+      INFLUXDB_DB: "dashboard"
+      INFLUXDB_ADMIN_USER: "admin"
+      INFLUXDB_ADMIN_PASSWORD: "admin"
+    volumes:
+      - ./kafka-influxdb-consumer/influxdb-data:/var/lib/influxdb

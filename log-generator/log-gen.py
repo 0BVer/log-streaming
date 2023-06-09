@@ -27,7 +27,7 @@ if __name__ == '__main__':
     kafka_topic_setup()
 
     print("[start generating]")
-    for _ in range(6000):
+    for _ in range(600):
         threading.Thread(target=create_user_server_log).start()
         threading.Thread(target=create_post_server_log).start()
         threading.Thread(target=create_mail_server_log).start()
