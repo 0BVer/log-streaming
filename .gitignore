@@ -2,3 +2,4 @@
 /zookeeper/
 /.idea/
 *.log
+/visualization/

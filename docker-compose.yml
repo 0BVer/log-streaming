@@ -155,3 +155,38 @@ services:
         limits:
           cpus: '1'
           memory: 2G
+
+  grafana:
+    image: grafana/grafana-oss:8.2.6
+    container_name: grafana
+    restart: unless-stopped
+#    environment:
+#      - GF_INSTALL_PLUGINS=hamedkarbasi93-kafka-datasource
+#    platform: 'linux/amd64' # hamedkarbasi93-kafka-datasource 이 플러그인에서 arm64를 지원하지 않음
+    ports:
+      - '3000:3000'
+    volumes:
+      - ./visualization/grafana:/var/lib/grafana
+
+  prometheus:
+    image: prom/prometheus
+    container_name: prometheus
+    volumes:
+      - ./visualization/prometheus/config:/etc/prometheus
+      - ./visualization/prometheus/volume:/prometheus
+    ports:
+      - "9090:9090"
+    command: # web.enalbe-lifecycle은 api 재시작없이 설정파일들을 reload 할 수 있게 해줌
+      - '--web.enable-lifecycle'
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    restart: unless-stopped
+
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:latest
+    container_name: kafka-exporter
+    ports:
+      - "9308:9308"
+    command:
+      - --kafka.server=kafka1:19092
+      - --kafka.server=kafka2:29092
+      - --kafka.server=kafka3:39092

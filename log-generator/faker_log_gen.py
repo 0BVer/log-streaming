@@ -12,7 +12,7 @@ method = ['GET', 'POST', 'PUT', 'DELETE']
 response = ["200", "201", "403", "404", "500", "301"]
 
 
-def create_log(server_name: str, resources: list, producer: KafkaProducer) -> None:
+def create_log(log_per_sec: int, server_name: str, resources: list, producer: KafkaProducer) -> None:
     time_now = datetime.datetime.now(tz=tzlocal.get_localzone())
     tz = datetime.datetime.now().strftime('%z')
     dt = time_now.strftime('%d/%b/%Y:%H:%M:%S')
@@ -20,7 +20,7 @@ def create_log(server_name: str, resources: list, producer: KafkaProducer) -> No
     # f = open(server_name + '_access_log_' + time.strftime("%Y%m%d") + '.log', 'w')
 
     start_time = time.time()
-    for _ in range(300):
+    for _ in range(log_per_sec):
         ip = faker.ipv4()
         vrb = numpy.random.choice(method, p=[0.7, 0.1, 0.1, 0.1])
         uri = random.choice(resources)
