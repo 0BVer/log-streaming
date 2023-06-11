@@ -8,7 +8,7 @@ from log_resource import user_resources, post_resources, mail_resources
 
 bootstrap_server = ["127.0.0.1:19092", "127.0.0.1:29092", "127.0.0.1:39092"]
 prod = KafkaProducer(bootstrap_servers=bootstrap_server)
-log_per_sec = 300
+log_per_sec = 3
 
 
 def create_user_server_log() -> None:

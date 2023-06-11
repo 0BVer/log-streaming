@@ -197,8 +197,20 @@ services:
     ports:
       - "8086:8086"
     environment:
-      INFLUXDB_DB: "dashboard"
-      INFLUXDB_ADMIN_USER: "admin"
-      INFLUXDB_ADMIN_PASSWORD: "admin"
+      DOCKER_INFLUXDB_INIT_MODE: "setup"
+      DOCKER_INFLUXDB_INIT_USERNAME: "admin"
+      DOCKER_INFLUXDB_INIT_PASSWORD: "12341234"
+      DOCKER_INFLUXDB_INIT_ORG: "log-streaming"
+      DOCKER_INFLUXDB_INIT_BUCKET: "dashboard"
+      DOCKER_INFLUXDB_INIT_RETENTION: "1w"
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: "sample-token"
     volumes:
       - ./kafka-influxdb-consumer/influxdb-data:/var/lib/influxdb
+
+  kafka-influxdb-consumer:
+    container_name: kafka-influxdb-consumer
+    build:
+      context: kafka-influxdb-consumer
+    volumes:
+      - ./kafka-influxdb-consumer/main.go:/app/main.go
+    command: go run main.go

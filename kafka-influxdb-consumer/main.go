@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/influxdata/influxdb-client-go/v2/api"
 	"log"
 	"os"
 	"os/signal"
@@ -12,17 +11,18 @@ import (
 
 	"github.com/Shopify/sarama"
 	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
+	"github.com/influxdata/influxdb-client-go/v2/api"
 	"github.com/linkedin/goavro/v2"
 )
 
 var (
-	influxURL    = "http://localhost:8086"
+	influxURL    = "http://influxdb:8086"
 	influxToken  = "sample-token"
 	influxBucket = "dashboard"
 	influxOrg    = "log-streaming"
-	kafkaBrokers = []string{"localhost:19092", "localhost:29092", "localhost:39092"}
-	//kafkaBrokers    = []string{"kafka1:19092", "kafka2:29092", "kafka3:39092"}
-	kafkaTopic      = "output-avro"
+	//kafkaBrokers = []string{"localhost:19092", "localhost:29092", "localhost:39092"}
+	kafkaBrokers    = []string{"kafka1:19092", "kafka2:29092", "kafka3:39092"}
+	kafkaTopic      = "output_avro"
 	consumerGroupID = "kafka-influxdb-consumer"
 )
 
@@ -112,7 +112,13 @@ type kafkaMessageHandler struct {
 }
 
 type KafkaMessage struct {
-	Message string `json:"message"`
+	IP          string `json:"ip"`
+	Timestamp   string `json:"timestamp"`
+	Method      string `json:"method"`
+	URL         string `json:"url"`
+	HTTPVersion string `json:"http_version"`
+	Status      string `json:"status"`
+	Byte        string `json:"byte"`
 }
 
 func (h *kafkaMessageHandler) Setup(session sarama.ConsumerGroupSession) error {
@@ -126,6 +132,7 @@ func (h *kafkaMessageHandler) Cleanup(session sarama.ConsumerGroupSession) error
 func (h *kafkaMessageHandler) ConsumeClaim(session sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
 	for msg := range claim.Messages() {
 		// Decode Avro message
+
 		native, _, err := h.codec.NativeFromBinary(msg.Value)
 		if err != nil {
 			log.Printf("Failed to decode Avro message: %s", err)
@@ -135,7 +142,13 @@ func (h *kafkaMessageHandler) ConsumeClaim(session sarama.ConsumerGroupSession, 
 
 		// Convert to KafkaMessage struct
 		message := KafkaMessage{
-			Message: native.(map[string]interface{})["message"].(string),
+			IP:          native.(map[string]interface{})["ip"].(string),
+			Timestamp:   native.(map[string]interface{})["timestamp"].(string),
+			Method:      native.(map[string]interface{})["method"].(string),
+			URL:         native.(map[string]interface{})["url"].(string),
+			HTTPVersion: native.(map[string]interface{})["http_version"].(string),
+			Status:      native.(map[string]interface{})["status"].(string),
+			Byte:        native.(map[string]interface{})["byte"].(string),
 		}
 
 		// Store in InfluxDB
@@ -148,11 +161,20 @@ func (h *kafkaMessageHandler) ConsumeClaim(session sarama.ConsumerGroupSession, 
 }
 
 func (h *kafkaMessageHandler) storeMessageInInfluxDB(message KafkaMessage) {
-	write := fmt.Sprintf("kafka_messages message=\"%s\"", message.Message)
+	write := fmt.Sprintf("kafka_messages ip=\"%s\", timestamp=\"%s\", method=\"%s\", url=\"%s\", http_version=\"%s\", status=\"%s\", byte=\"%s\"",
+		message.IP, message.Timestamp, message.Method, message.URL, message.HTTPVersion, message.Status, message.Byte)
 	point := influxdb2.NewPoint(
-		"kafka_messages",
+		"access-log",
 		nil,
-		map[string]interface{}{"message": message.Message},
+		map[string]interface{}{
+			"ip":           message.IP,
+			"timestamp":    message.Timestamp,
+			"method":       message.Method,
+			"url":          message.URL,
+			"http_version": message.HTTPVersion,
+			"status":       message.Status,
+			"byte":         message.Byte,
+		},
 		time.Now(),
 	)
 
