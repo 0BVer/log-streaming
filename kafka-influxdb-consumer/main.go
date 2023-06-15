@@ -2,11 +2,11 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"os"
 	"os/signal"
 	"strconv"
+	"sync"
 	"syscall"
 	"time"
 
@@ -22,19 +22,56 @@ var (
 	influxBucket      = "dashboard"
 	influxOrg         = "log-streaming"
 	influxMeasurement = "access-log-data"
-	//kafkaBrokers = []string{"localhost:19092", "localhost:29092", "localhost:39092"}
-	kafkaBrokers    = []string{"kafka1:19092", "kafka2:29092", "kafka3:39092"}
-	kafkaTopic      = "output_avro"
-	consumerGroupID = "kafka-influxdb-consumer"
+	kafkaBrokers      = []string{"kafka1:19092", "kafka2:29092", "kafka3:39092"}
+	kafkaTopic        = "output_avro"
+	consumerGroupID   = "kafka-influxdb-consumer"
+	numConsumers      = 2
+	// Set up Avro codec
+	codec, codecErr = goavro.NewCodec(`{
+	  "type": "record",
+	  "name": "LogRecord",
+	  "fields": [
+		{"name": "ip", "type": "string"},
+		{"name": "timestamp", "type": "string"},
+		{"name": "method", "type": "string"},
+		{"name": "url", "type": "string"},
+		{"name": "http_version", "type": "string"},
+		{"name": "status", "type": "string"},
+		{"name": "byte", "type": "string"}
+	  ]
+	}`)
 )
 
 func main() {
-
-	fmt.Printf("start consumer\n")
 	// Set up InfluxDB client
 	client := influxdb2.NewClientWithOptions(influxURL, influxToken, influxdb2.DefaultOptions().SetBatchSize(100))
 	writeAPI := client.WriteAPI(influxOrg, influxBucket)
 
+	if codecErr != nil {
+		log.Fatalf("Failed to create Avro codec: %s", codecErr)
+	}
+
+	// Create a wait group to synchronize the consumers
+	var wg sync.WaitGroup
+	wg.Add(numConsumers)
+
+	// Start the consumers
+	for i := 0; i < numConsumers; i++ {
+		go func() {
+			defer wg.Done()
+			log.Println("Starting consumer")
+			consumeMessages(codec, writeAPI)
+		}()
+	}
+
+	// Wait for all consumers to finish
+	wg.Wait()
+
+	// Close InfluxDB client
+	client.Close()
+}
+
+func consumeMessages(codec *goavro.Codec, writeAPI api.WriteAPI) {
 	// Set up Kafka consumer
 	config := sarama.NewConfig()
 	config.Consumer.Group.Rebalance.Strategy = sarama.BalanceStrategyRoundRobin
@@ -45,31 +82,13 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to create consumer group: %s", err)
 	}
+
 	defer func(consumer sarama.ConsumerGroup) {
 		err := consumer.Close()
 		if err != nil {
 			log.Fatalf("Failed to close consumer group: %s", err)
 		}
 	}(consumer)
-
-	// Set up Avro codec
-	codec, err := goavro.NewCodec(`{
-		  "type": "record",
-		  "name": "LogRecord",
-		  "fields": [
-			{"name": "ip", "type": "string"},
-			{"name": "timestamp", "type": "string"},
-			{"name": "method", "type": "string"},
-			{"name": "url", "type": "string"},
-			{"name": "http_version", "type": "string"},
-			{"name": "status", "type": "string"},
-			{"name": "byte", "type": "string"}
-		  ]
-		}`)
-
-	if err != nil {
-		log.Fatalf("Failed to create Avro codec: %s", err)
-	}
 
 	// Handle Kafka consumer errors
 	go func() {
@@ -103,9 +122,6 @@ func main() {
 			break
 		}
 	}
-
-	// Close InfluxDB client
-	client.Close()
 }
 
 type kafkaMessageHandler struct {
@@ -142,6 +158,14 @@ func (h *kafkaMessageHandler) ConsumeClaim(session sarama.ConsumerGroupSession, 
 			continue
 		}
 
+		timestamp, err := time.Parse(time.RFC3339, native.(map[string]interface{})["timestamp"].(string))
+
+		if err != nil {
+			log.Printf("Failed to parse timestamp: %s", err)
+			session.MarkMessage(msg, "")
+			continue
+		}
+
 		// Convert to KafkaMessage struct
 		message := KafkaMessage{
 			IP:          native.(map[string]interface{})["ip"].(string),
@@ -149,16 +173,8 @@ func (h *kafkaMessageHandler) ConsumeClaim(session sarama.ConsumerGroupSession, 
 			URL:         native.(map[string]interface{})["url"].(string),
 			HTTPVersion: native.(map[string]interface{})["http_version"].(string),
 			Status:      native.(map[string]interface{})["status"].(string),
+			Timestamp:   timestamp.UnixNano(),
 		}
-
-		timestampStr := native.(map[string]interface{})["timestamp"].(string)
-		timestamp, err := time.Parse(time.RFC3339, timestampStr)
-		if err != nil {
-			log.Printf("Failed to parse timestamp: %s", err)
-			session.MarkMessage(msg, "")
-			continue
-		}
-		message.Timestamp = timestamp.UnixNano()
 
 		byteStr := native.(map[string]interface{})["byte"].(string)
 		byteVal, err := strconv.Atoi(byteStr)
@@ -179,8 +195,8 @@ func (h *kafkaMessageHandler) ConsumeClaim(session sarama.ConsumerGroupSession, 
 }
 
 func (h *kafkaMessageHandler) storeMessageInInfluxDB(message KafkaMessage) {
-	write := fmt.Sprintf("kafka_messages ip=\"%s\", timestamp=\"%s\", method=\"%s\", url=\"%s\", http_version=\"%s\", status=\"%s\", byte=\"%s\"",
-		message.IP, message.Timestamp, message.Method, message.URL, message.HTTPVersion, message.Status, message.Byte)
+	//write := fmt.Sprintf("kafka_messages ip=\"%s\", timestamp=\"%s\", method=\"%s\", url=\"%s\", http_version=\"%s\", status=\"%s\", byte=\"%s\"",
+	//	message.IP, message.Timestamp, message.Method, message.URL, message.HTTPVersion, message.Status, message.Byte)
 	point := influxdb2.NewPoint(
 		influxMeasurement,
 		nil,
@@ -197,7 +213,7 @@ func (h *kafkaMessageHandler) storeMessageInInfluxDB(message KafkaMessage) {
 	)
 
 	h.writeAPI.WritePoint(point)
-	log.Printf("Stored Kafka message in InfluxDB: %s", write)
+	//log.Printf("Stored Kafka message in InfluxDB: %s", write)
 }
 
 func getSeoulTime() time.Time {

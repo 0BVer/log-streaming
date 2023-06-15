@@ -14,11 +14,11 @@ import (
 var (
 	bootstrapServers = "127.0.0.1:19092,127.0.0.1:29092,127.0.0.1:39092"
 	topics           = []string{"user", "post", "mail"}
-	rateLimit        = 1000 // Desired messages per second
+	rateLimit        = 1500 // Desired messages per second
 	numProducers     = 9
 	config           = kafka.ConfigMap{
 		"bootstrap.servers": bootstrapServers,
-		"batch.size":        32768 * 2, // 32KB
+		"batch.size":        32768 * 4, // 128KB
 	}
 )
 
