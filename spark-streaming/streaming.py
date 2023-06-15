@@ -1,7 +1,7 @@
 from pyspark.sql import SparkSession
 from pyspark.sql.avro.functions import to_avro
 from pyspark.sql.functions import from_json, col, struct
-from pyspark.sql.types import StructType, StructField, StringType
+from pyspark.sql.types import StructType, StructField, StringType, BinaryType
 
 from kafka_config import kafka_input_options, kafka_output_avro_options, kafka_output_options
 from my_udf import parse_log_udf
@@ -23,9 +23,8 @@ df = spark.readStream \
     .options(**kafka_input_options) \
     .load()
 
-# # 로그 파싱을 위해 스키마를 적용
-parsed_df = df.select(from_json(df.value.cast("string"), log_schema).alias("parsed_log")) \
-    .select("parsed_log.log")
+# 로그 파싱을 위해 스키마를 적용
+parsed_df = df.select((col("value").cast("string")).alias("log")) \
 
 # 필드 추출 및 JSON 변환
 parsed_fields_df = parsed_df.withColumn("log", parse_log_udf(col("log"))) \
@@ -49,15 +48,15 @@ avro_df.selectExpr("CAST(value AS BINARY)") \
     .start()
 
 # 공격 의심 url 필터링 및 Kafka에 퍼블리싱
-filtered_df = parsed_fields_df.where((col("url") != "/admin") & (col("url") != "/.env"))
-
-filtered_avro_df = filtered_df.select(to_avro(struct("*"), access_log_avro).alias("value"))
-
-filtered_avro_df.selectExpr("CAST(value AS BINARY)") \
-    .writeStream \
-    .format("kafka") \
-    .options(**kafka_output_options) \
-    .start()
+# filtered_df = parsed_fields_df.where((col("url") != "/admin") & (col("url") != "/.env"))
+#
+# filtered_avro_df = filtered_df.select(to_avro(struct("*"), access_log_avro).alias("value"))
+#
+# filtered_avro_df.selectExpr("CAST(value AS BINARY)") \
+#     .writeStream \
+#     .format("kafka") \
+#     .options(**kafka_output_options) \
+#     .start()
 
 # 스트리밍 작업 시작
 spark.streams.awaitAnyTermination()
