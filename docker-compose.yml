@@ -58,6 +58,7 @@ services:
       KAFKA_ZOOKEEPER_CONNECT: zookeeper1:12181,zookeeper2:22181,zookeeper3:32181
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka1:19092
       KAFKA_LOG_DIRS: /kafka
+      KAFKA_LOG_RETENTION_MS: 86400000 # 1 day
     ports:
       - "19092:19092"
     volumes:
@@ -75,6 +76,7 @@ services:
       KAFKA_ZOOKEEPER_CONNECT: zookeeper1:12181,zookeeper2:22181,zookeeper3:32181
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka2:29092
       KAFKA_LOG_DIRS: /kafka
+      KAFKA_LOG_RETENTION_MS: 86400000 # 1 day
     ports:
       - "29092:29092"
     volumes:
@@ -92,6 +94,7 @@ services:
       KAFKA_ZOOKEEPER_CONNECT: zookeeper1:12181,zookeeper2:22181,zookeeper3:32181
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka3:39092
       KAFKA_LOG_DIRS: /kafka
+      KAFKA_LOG_RETENTION_MS: 86400000 # 1 day
     ports:
       - "39092:39092"
     volumes:
