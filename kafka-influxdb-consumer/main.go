@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -16,10 +17,11 @@ import (
 )
 
 var (
-	influxURL    = "http://influxdb:8086"
-	influxToken  = "sample-token"
-	influxBucket = "dashboard"
-	influxOrg    = "log-streaming"
+	influxURL         = "http://influxdb:8086"
+	influxToken       = "sample-token"
+	influxBucket      = "dashboard"
+	influxOrg         = "log-streaming"
+	influxMeasurement = "access-log-data"
 	//kafkaBrokers = []string{"localhost:19092", "localhost:29092", "localhost:39092"}
 	kafkaBrokers    = []string{"kafka1:19092", "kafka2:29092", "kafka3:39092"}
 	kafkaTopic      = "output_avro"
@@ -113,12 +115,12 @@ type kafkaMessageHandler struct {
 
 type KafkaMessage struct {
 	IP          string `json:"ip"`
-	Timestamp   string `json:"timestamp"`
+	Timestamp   int64  `json:"timestamp"`
 	Method      string `json:"method"`
 	URL         string `json:"url"`
 	HTTPVersion string `json:"http_version"`
 	Status      string `json:"status"`
-	Byte        string `json:"byte"`
+	Byte        int    `json:"byte"`
 }
 
 func (h *kafkaMessageHandler) Setup(session sarama.ConsumerGroupSession) error {
@@ -143,13 +145,29 @@ func (h *kafkaMessageHandler) ConsumeClaim(session sarama.ConsumerGroupSession, 
 		// Convert to KafkaMessage struct
 		message := KafkaMessage{
 			IP:          native.(map[string]interface{})["ip"].(string),
-			Timestamp:   native.(map[string]interface{})["timestamp"].(string),
 			Method:      native.(map[string]interface{})["method"].(string),
 			URL:         native.(map[string]interface{})["url"].(string),
 			HTTPVersion: native.(map[string]interface{})["http_version"].(string),
 			Status:      native.(map[string]interface{})["status"].(string),
-			Byte:        native.(map[string]interface{})["byte"].(string),
 		}
+
+		timestampStr := native.(map[string]interface{})["timestamp"].(string)
+		timestamp, err := time.Parse(time.RFC3339, timestampStr)
+		if err != nil {
+			log.Printf("Failed to parse timestamp: %s", err)
+			session.MarkMessage(msg, "")
+			continue
+		}
+		message.Timestamp = timestamp.UnixNano()
+
+		byteStr := native.(map[string]interface{})["byte"].(string)
+		byteVal, err := strconv.Atoi(byteStr)
+		if err != nil {
+			log.Printf("Failed to convert byte to integer: %s", err)
+			session.MarkMessage(msg, "")
+			continue
+		}
+		message.Byte = byteVal
 
 		// Store in InfluxDB
 		h.storeMessageInInfluxDB(message)
@@ -164,7 +182,7 @@ func (h *kafkaMessageHandler) storeMessageInInfluxDB(message KafkaMessage) {
 	write := fmt.Sprintf("kafka_messages ip=\"%s\", timestamp=\"%s\", method=\"%s\", url=\"%s\", http_version=\"%s\", status=\"%s\", byte=\"%s\"",
 		message.IP, message.Timestamp, message.Method, message.URL, message.HTTPVersion, message.Status, message.Byte)
 	point := influxdb2.NewPoint(
-		"access-log",
+		influxMeasurement,
 		nil,
 		map[string]interface{}{
 			"ip":           message.IP,
@@ -175,9 +193,18 @@ func (h *kafkaMessageHandler) storeMessageInInfluxDB(message KafkaMessage) {
 			"status":       message.Status,
 			"byte":         message.Byte,
 		},
-		time.Now(),
+		getSeoulTime(),
 	)
 
 	h.writeAPI.WritePoint(point)
 	log.Printf("Stored Kafka message in InfluxDB: %s", write)
+}
+
+func getSeoulTime() time.Time {
+	location, err := time.LoadLocation("Asia/Seoul")
+	if err != nil {
+		log.Fatalf("Failed to load location: %s", err)
+	}
+	seoulTime := time.Now().In(location)
+	return seoulTime
 }
