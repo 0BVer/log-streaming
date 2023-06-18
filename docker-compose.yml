@@ -3,7 +3,7 @@ version: '3'
 services:
   zookeeper-1:
     hostname: zookeeper1
-    image: confluentinc/cp-zookeeper:6.2.0
+    image: confluentinc/cp-zookeeper:7.3.3.arm64
     environment:
       ZOOKEEPER_SERVER_ID: 1
       ZOOKEEPER_CLIENT_PORT: 12181
@@ -15,10 +15,15 @@ services:
       - "23888:23888"
     volumes:
       - ./zookeeper/data/1:/zookeeper/data
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 2G
 
   zookeeper-2:
     hostname: zookeeper2
-    image: confluentinc/cp-zookeeper:6.2.0
+    image: confluentinc/cp-zookeeper:7.3.3.arm64
     environment:
       ZOOKEEPER_SERVER_ID: 2
       ZOOKEEPER_CLIENT_PORT: 22181
@@ -30,10 +35,15 @@ services:
       - "33888:33888"
     volumes:
       - ./zookeeper/data/2:/zookeeper/data
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 2G
 
   zookeeper-3:
     hostname: zookeeper3
-    image: confluentinc/cp-zookeeper:6.2.0
+    image: confluentinc/cp-zookeeper:7.3.3.arm64
     environment:
       ZOOKEEPER_SERVER_ID: 3
       ZOOKEEPER_CLIENT_PORT: 32181
@@ -45,9 +55,14 @@ services:
       - "43888:43888"
     volumes:
       - ./zookeeper/data/3:/zookeeper/data
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 2G
 
   kafka-1:
-    image: confluentinc/cp-kafka:6.2.0
+    image: confluentinc/cp-kafka:7.3.3.arm64
     hostname: kafka1
     depends_on:
       - zookeeper-1
@@ -63,9 +78,14 @@ services:
       - "19092:19092"
     volumes:
       - ./kafka/logs/1:/kafka
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 2G
 
   kafka-2:
-    image: confluentinc/cp-kafka:6.2.0
+    image: confluentinc/cp-kafka:7.3.3.arm64
     hostname: kafka2
     depends_on:
       - zookeeper-1
@@ -81,9 +101,14 @@ services:
       - "29092:29092"
     volumes:
       - ./kafka/logs/2:/kafka
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 2G
 
   kafka-3:
-    image: confluentinc/cp-kafka:6.2.0
+    image: confluentinc/cp-kafka:7.3.3.arm64
     hostname: kafka3
     depends_on:
       - zookeeper-1
@@ -99,6 +124,11 @@ services:
       - "39092:39092"
     volumes:
       - ./kafka/logs/3:/kafka
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 2G
 
   akhq:
     image: tchiotludo/akhq:latest
@@ -130,6 +160,11 @@ services:
     volumes:
       - ./spark-streaming:/spark-streaming
       - ./kafka:/kafka
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
 
   spark-worker-1:
     image: bitnami/spark:latest
@@ -148,6 +183,20 @@ services:
   spark-worker-2:
     image: bitnami/spark:latest
     container_name: spark-worker-2
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+    depends_on:
+      - spark-master
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 2G
+
+  spark-worker-3:
+    image: bitnami/spark:latest
+    container_name: spark-worker-3
     environment:
       - SPARK_MODE=worker
       - SPARK_MASTER_URL=spark://spark-master:7077
@@ -208,12 +257,12 @@ services:
       DOCKER_INFLUXDB_INIT_RETENTION: "1w"
       DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: "sample-token"
     volumes:
-      - ./kafka-influxdb-consumer/influxdb-data:/var/lib/influxdb
+      - ./influxdb-data:/var/lib/influxdb
 
   kafka-influxdb-consumer:
     container_name: kafka-influxdb-consumer
     build:
       context: kafka-influxdb-consumer
     volumes:
-      - ./kafka-influxdb-consumer/main.go:/app/main.go
+      - ./kafka-influxdb-consumer:/app
     command: go run main.go

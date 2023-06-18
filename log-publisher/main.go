@@ -14,11 +14,11 @@ import (
 var (
 	bootstrapServers = "127.0.0.1:19092,127.0.0.1:29092,127.0.0.1:39092"
 	topics           = []string{"user", "post", "mail"}
-	rateLimit        = 1500 // Desired messages per second
+	rateLimit        = 5000 // Desired messages per second
 	numProducers     = 9
 	config           = kafka.ConfigMap{
 		"bootstrap.servers": bootstrapServers,
-		"batch.size":        32768 * 4, // 128KB
+		"batch.size":        256 * 1000, // 256KB
 	}
 )
 
@@ -60,7 +60,12 @@ func getSeoulTime() string {
 }
 
 func main() {
-	kafkaTopicSetup(bootstrapServers, topics)
+	kafkaTopicSetup(bootstrapServers, "user")
+	kafkaTopicSetup(bootstrapServers, "post")
+	kafkaTopicSetup(bootstrapServers, "mail")
+	kafkaTopicSetup(bootstrapServers, "user_avro")
+	kafkaTopicSetup(bootstrapServers, "post_avro")
+	kafkaTopicSetup(bootstrapServers, "mail_avro")
 
 	producers := make([]*kafka.Producer, numProducers)
 

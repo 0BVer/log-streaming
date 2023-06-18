@@ -2,6 +2,10 @@ package main
 
 import (
 	"context"
+	"github.com/Shopify/sarama"
+	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
+	"github.com/influxdata/influxdb-client-go/v2/api"
+	"github.com/linkedin/goavro/v2"
 	"log"
 	"os"
 	"os/signal"
@@ -9,11 +13,6 @@ import (
 	"sync"
 	"syscall"
 	"time"
-
-	"github.com/Shopify/sarama"
-	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
-	"github.com/influxdata/influxdb-client-go/v2/api"
-	"github.com/linkedin/goavro/v2"
 )
 
 var (
@@ -23,55 +22,82 @@ var (
 	influxOrg         = "log-streaming"
 	influxMeasurement = "access-log-data"
 	kafkaBrokers      = []string{"kafka1:19092", "kafka2:29092", "kafka3:39092"}
-	kafkaTopic        = "output_avro"
-	consumerGroupID   = "kafka-influxdb-consumer"
-	numConsumers      = 2
-	// Set up Avro codec
-	codec, codecErr = goavro.NewCodec(`{
-	  "type": "record",
-	  "name": "LogRecord",
-	  "fields": [
-		{"name": "ip", "type": "string"},
-		{"name": "timestamp", "type": "string"},
-		{"name": "method", "type": "string"},
-		{"name": "url", "type": "string"},
-		{"name": "http_version", "type": "string"},
-		{"name": "status", "type": "string"},
-		{"name": "byte", "type": "string"}
-	  ]
-	}`)
+	kafkaTopics       = []string{"user_avro", "post_avro", "mail_avro"}
+	consumerGroupID   = "influxdb-consumer"
+	numConsumers      = 3 // len(kafkaTopics) * n
 )
 
+type kafkaMessageHandler struct {
+	codec    *goavro.Codec
+	writeAPI api.WriteAPI
+}
+
+type KafkaMessage struct {
+	IP          string `json:"ip"`
+	Timestamp   int64  `json:"timestamp"`
+	Method      string `json:"method"`
+	URL         string `json:"url"`
+	HTTPVersion string `json:"http_version"`
+	Status      string `json:"status"`
+	Byte        int    `json:"byte"`
+}
+
 func main() {
-	// Set up InfluxDB client
-	client := influxdb2.NewClientWithOptions(influxURL, influxToken, influxdb2.DefaultOptions().SetBatchSize(100))
-	writeAPI := client.WriteAPI(influxOrg, influxBucket)
-
-	if codecErr != nil {
-		log.Fatalf("Failed to create Avro codec: %s", codecErr)
-	}
-
 	// Create a wait group to synchronize the consumers
 	var wg sync.WaitGroup
 	wg.Add(numConsumers)
 
 	// Start the consumers
 	for i := 0; i < numConsumers; i++ {
-		go func() {
+		go func(i int) {
 			defer wg.Done()
-			log.Println("Starting consumer")
-			consumeMessages(codec, writeAPI)
-		}()
-	}
 
+			// Set up InfluxDB client
+			client := influxdb2.NewClientWithOptions(influxURL, influxToken, influxdb2.DefaultOptions().SetBatchSize(100))
+			writeAPI := client.WriteAPI(influxOrg, influxBucket)
+			handler := &kafkaMessageHandler{codec: getCodec(), writeAPI: writeAPI}
+
+			// Close InfluxDB client
+			defer client.Close()
+
+			log.Println("Starting consumer ", i)
+			consumeMessages(handler, kafkaTopics[i%len(kafkaTopics)])
+
+		}(i)
+	}
 	// Wait for all consumers to finish
 	wg.Wait()
-
-	// Close InfluxDB client
-	client.Close()
 }
 
-func consumeMessages(codec *goavro.Codec, writeAPI api.WriteAPI) {
+func (h *kafkaMessageHandler) storeMessageInInfluxDB(message KafkaMessage) {
+	point := influxdb2.NewPoint(
+		influxMeasurement,
+		nil,
+		map[string]interface{}{
+			"ip":           message.IP,
+			"timestamp":    message.Timestamp,
+			"method":       message.Method,
+			"url":          message.URL,
+			"http_version": message.HTTPVersion,
+			"status":       message.Status,
+			"byte":         message.Byte,
+		},
+		getSeoulTime(),
+	)
+
+	h.writeAPI.WritePoint(point)
+}
+
+func getSeoulTime() time.Time {
+	location, err := time.LoadLocation("Asia/Seoul")
+	if err != nil {
+		log.Fatalf("Failed to load location: %s", err)
+	}
+	seoulTime := time.Now().In(location)
+	return seoulTime
+}
+
+func consumeMessages(handler *kafkaMessageHandler, kafkaTopic string) {
 	// Set up Kafka consumer
 	config := sarama.NewConfig()
 	config.Consumer.Group.Rebalance.Strategy = sarama.BalanceStrategyRoundRobin
@@ -112,8 +138,6 @@ func consumeMessages(codec *goavro.Codec, writeAPI api.WriteAPI) {
 
 	// Consume messages from Kafka
 	for {
-		handler := &kafkaMessageHandler{codec: codec, writeAPI: writeAPI}
-
 		if err := consumer.Consume(ctx, []string{kafkaTopic}, handler); err != nil {
 			log.Printf("Kafka consumer error: %s", err)
 		}
@@ -122,21 +146,6 @@ func consumeMessages(codec *goavro.Codec, writeAPI api.WriteAPI) {
 			break
 		}
 	}
-}
-
-type kafkaMessageHandler struct {
-	codec    *goavro.Codec
-	writeAPI api.WriteAPI
-}
-
-type KafkaMessage struct {
-	IP          string `json:"ip"`
-	Timestamp   int64  `json:"timestamp"`
-	Method      string `json:"method"`
-	URL         string `json:"url"`
-	HTTPVersion string `json:"http_version"`
-	Status      string `json:"status"`
-	Byte        int    `json:"byte"`
 }
 
 func (h *kafkaMessageHandler) Setup(session sarama.ConsumerGroupSession) error {
@@ -194,33 +203,22 @@ func (h *kafkaMessageHandler) ConsumeClaim(session sarama.ConsumerGroupSession, 
 	return nil
 }
 
-func (h *kafkaMessageHandler) storeMessageInInfluxDB(message KafkaMessage) {
-	//write := fmt.Sprintf("kafka_messages ip=\"%s\", timestamp=\"%s\", method=\"%s\", url=\"%s\", http_version=\"%s\", status=\"%s\", byte=\"%s\"",
-	//	message.IP, message.Timestamp, message.Method, message.URL, message.HTTPVersion, message.Status, message.Byte)
-	point := influxdb2.NewPoint(
-		influxMeasurement,
-		nil,
-		map[string]interface{}{
-			"ip":           message.IP,
-			"timestamp":    message.Timestamp,
-			"method":       message.Method,
-			"url":          message.URL,
-			"http_version": message.HTTPVersion,
-			"status":       message.Status,
-			"byte":         message.Byte,
-		},
-		getSeoulTime(),
-	)
-
-	h.writeAPI.WritePoint(point)
-	//log.Printf("Stored Kafka message in InfluxDB: %s", write)
-}
-
-func getSeoulTime() time.Time {
-	location, err := time.LoadLocation("Asia/Seoul")
-	if err != nil {
-		log.Fatalf("Failed to load location: %s", err)
+func getCodec() *goavro.Codec {
+	codec, codecErr := goavro.NewCodec(`{
+	  "type": "record",
+	  "name": "LogRecord",
+	  "fields": [
+		{"name": "ip", "type": "string"},
+		{"name": "timestamp", "type": "string"},
+		{"name": "method", "type": "string"},
+		{"name": "url", "type": "string"},
+		{"name": "http_version", "type": "string"},
+		{"name": "status", "type": "string"},
+		{"name": "byte", "type": "string"}
+	  ]
+	}`)
+	if codecErr != nil {
+		log.Fatalf("Failed to create Avro codec: %s", codecErr)
 	}
-	seoulTime := time.Now().In(location)
-	return seoulTime
+	return codec
 }

@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func kafkaTopicSetup(bootstrapServer string, topics []string) {
+func kafkaTopicSetup(bootstrapServer string, topic string) {
 	admin, err := kafka.NewAdminClient(&kafka.ConfigMap{
 		"bootstrap.servers":       bootstrapServer,
 		"api.version.request":     "true",
@@ -18,28 +18,24 @@ func kafkaTopicSetup(bootstrapServer string, topics []string) {
 	}
 	defer admin.Close()
 
-	createTopics := make([]kafka.TopicSpecification, 0)
-	for _, topic := range topics {
-		createTopics = append(createTopics, kafka.TopicSpecification{
-			Topic:             topic,
-			NumPartitions:     2,
-			ReplicationFactor: 1,
-		})
+	createTopic := kafka.TopicSpecification{
+		Topic:             topic,
+		NumPartitions:     3,
+		ReplicationFactor: 1,
 	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	results, err := admin.CreateTopics(ctx, createTopics)
+	result, err := admin.CreateTopics(ctx, []kafka.TopicSpecification{createTopic})
 
 	if err != nil {
-		log.Fatalf("Failed to create topics: %v", err)
+		log.Fatalf("Failed to create topic '%s': %v", topic, err)
 	}
 
-	for _, result := range results {
-		if result.Error.Code() != kafka.ErrNoError && result.Error.Code() != kafka.ErrTopicAlreadyExists {
-			log.Printf("Failed to create topic '%s': %v", result.Topic, result.Error)
-		} else {
-			log.Printf("Topic '%s' created successfully", result.Topic)
-		}
+	if result[0].Error.Code() != kafka.ErrNoError && result[0].Error.Code() != kafka.ErrTopicAlreadyExists {
+		log.Printf("Failed to create topic '%s': %v", result[0].Topic, result[0].Error)
+	} else {
+		log.Printf("Topic '%s' created successfully", result[0].Topic)
 	}
 }
